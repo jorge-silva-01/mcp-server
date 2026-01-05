@@ -8,7 +8,53 @@ type ApiResult<T> = ApiOk<T> | ApiError;
 
 type ApiRequestOptions = {
   headers?: Record<string, string>;
+  auth?: AuthCtx;
 };
+
+type AuthCtx = {
+  authToken?: string;
+  organizationToken?: string;
+  cookie?: string;
+  organizationId?: string;
+};
+
+function buildAuthHeadersFromContext(ctx?: AuthCtx): Record<string, string> {
+  const authToken = ctx?.authToken?.trim() || process.env.API_TOKEN?.trim();
+  const orgToken =
+    ctx?.organizationToken?.trim() || process.env.ORGANIZATION_TOKEN?.trim();
+
+  if (!authToken || !orgToken) {
+    throw new Error("Auth ausente: authToken/organizationToken não informados");
+  }
+
+  const organizationId =
+    ctx?.organizationId ||
+    (() => {
+      const payload = decodeJwtPayload(orgToken) as {
+        organizationId?: unknown;
+      } | null;
+      return payload && typeof payload.organizationId === "string"
+        ? payload.organizationId
+        : undefined;
+    })();
+
+  const cookie =
+    ctx?.cookie?.trim() ||
+    [
+      `auth_token=${authToken}`,
+      `organization=${orgToken}`,
+      `organization_token=${orgToken}`,
+    ].join("; ");
+
+  return {
+    Accept: "application/json",
+    Cookie: cookie,
+
+    Authorization: `Bearer ${authToken}`,
+    ...(organizationId ? { "x-organization-id": organizationId } : {}),
+    "x-organization-token": orgToken,
+  };
+}
 
 function mustEnv(name: string): string {
   const v = process.env[name];
@@ -29,38 +75,6 @@ function decodeJwtPayload(token: string): unknown | null {
   }
 }
 
-function buildAuthHeaders(): Record<string, string> {
-  const authToken = mustEnv("API_TOKEN");
-  const orgToken = mustEnv("ORGANIZATION_TOKEN");
-
-  const orgPayload = decodeJwtPayload(orgToken) as {
-    organizationId?: unknown;
-  } | null;
-
-  const organizationId =
-    orgPayload && typeof orgPayload.organizationId === "string"
-      ? orgPayload.organizationId
-      : undefined;
-
-  return {
-    Accept: "application/json",
-
-    // Se o backend usa cookie como no browser, este é o ponto crítico:
-    Cookie: [
-      `auth_token=${authToken}`,
-      // envie ambos para cobrir o nome real (um deles vai “bater”)
-      `organization=${orgToken}`,
-      `organization_token=${orgToken}`,
-    ].join("; "),
-
-    // Se quiser manter (não atrapalha), mas não conte com isso:
-    Authorization: `Bearer ${authToken}`,
-    ...(organizationId ? { "x-organization-id": organizationId } : {}),
-    "x-organization-token": orgToken,
-  };
-}
-
-// form-data (npm) expõe getHeaders()
 type FormDataLike = { getHeaders: () => Record<string, string> };
 
 function isFormDataLike(body: unknown): body is FormDataLike {
@@ -81,11 +95,10 @@ async function apiRequest<T = unknown>(
   const url = `${base}${path}`;
 
   const headers: Record<string, string> = {
-    ...buildAuthHeaders(),
+    ...buildAuthHeadersFromContext(options?.auth),
     ...(options?.headers ?? {}),
   };
 
-  // 1) multipart -> axios (corrige Unexpected end of form)
   if (body !== undefined && method !== "GET" && isFormDataLike(body)) {
     const multipartHeaders = body.getHeaders();
     const mergedHeaders = { ...headers, ...multipartHeaders };
@@ -96,7 +109,6 @@ async function apiRequest<T = unknown>(
         method,
         headers: mergedHeaders,
         data: body,
-        // evita axios tentar transformar stream
         maxBodyLength: Infinity,
         maxContentLength: Infinity,
         validateStatus: () => true,
@@ -112,7 +124,6 @@ async function apiRequest<T = unknown>(
     }
   }
 
-  // 2) JSON -> fetch normal
   let fetchBody: string | undefined;
 
   if (body !== undefined && method !== "GET") {
@@ -141,7 +152,6 @@ async function apiRequest<T = unknown>(
   return data as T;
 }
 
-// Helpers
 export const api = {
   get: <T = unknown>(path: string, options?: ApiRequestOptions) =>
     apiRequest<T>("GET", path, undefined, options),
