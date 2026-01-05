@@ -1,0 +1,26 @@
+{
+  "name": "agiliza-previ-mcp-server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.1",
+    "axios": "^1.13.2",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "form-data": "^4.0.5",
+    "mysql2": "^3.16.0",
+    "node-sql-parser": "^5.3.13",
+    "zod": "^4.2.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/form-data": "^2.2.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  }
+}
